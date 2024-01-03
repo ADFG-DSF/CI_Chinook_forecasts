@@ -7,21 +7,18 @@ output:
   pdf_document: default
   word_document: default
 ---
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+```{r setup, include=FALSE, warning=FALSE}
+#Note to Nick. TO me it makes sense to lump all of this together as it is all prep for the analysis which can use common options (Warning = FALSE being a big one.)
+knitr::opts_chunk$set(echo = TRUE) #Use these defalts whaen you want to echo more than you don't.
+knitr::opts_chunk$set(warning = FALSE) #Mostly the warnings can/should be left out of the output but I generally run it with them first (by commenting out this line)
 
-## 2024 Kenai Early Run Forecast
-```{r read in data, echo=FALSE}
-rm(list = ls())
-brood <- read.csv(".\\KenaiLate2024.csv") #you can make the reference relative so your analysis is portable
-```
-
-```{r updated comp models function, echo=FALSE}
-#Here is the com models function w mape added in.
-
+devtools::install_github("adamreimer/preseason")
+library(preseason)
 library(tidyverse)
 
+rm(list = ls())
+
+#comp models function w mape added in.
 comp_models2 <- function(dat, comp_age, years = 5){
   age <- paste0("age", comp_age)
   diff <- dat %>%
@@ -44,27 +41,23 @@ comp_models2 <- function(dat, comp_age, years = 5){
   
   list(plot, table)
 }
-```
 
+#Read in Kenai late brood table
+brood <- read.csv(".\\KenaiLate2024.csv") #you can make the reference relative so your analysis is portable
 
-```{r Forecast functions, echo=FALSE}
-devtools::install_github("adamreimer/preseason")
-
-library(preseason)
-
-```
-
-```{r prep data, echo=FALSE}
-
+#prep data for analysis
 dat5 <- prep_brood(brood, 5:5)
 dat6 <- prep_brood(brood, 5:6)
 dat7 <- prep_brood(brood, 5:7)
-
 ```
+
 
 ## Age 5 models
 
-```{r age 5 models, echo=FALSE}
+```{r age 5 models}
+#Note to Nick: I would say echo = TRUE on this chuck so that we can see what output relates to what call. Otherwise we have to comment out some stuff or break 
+#into several code chunks and explain each one with text.
+
 #Moving average model
 ## predictions
 dat5$md5_pred <- pred_ma(dat5$ln, yrs = 5)[, "median"]
@@ -84,14 +77,21 @@ ets5 <- forecast::ets(dat5$ln)
 dat5$es_pred <- pred_es(dat5$ln)
 
 #compare models
-## Notice most of the difference comes from 4 and 5 years ago when the population was in serious decline.
-##exponential smoothing better recently
-comp_models2(dat5, 5, years = 3)
 comp_models2(dat5, 5, years = 5)
 ```
 
-## Age 5 predictions
-```{r age 5 predictions, echo=FALSE}
+Here is an example where it really works better to break out the result. Notice that comp models picks the ARIMA difference model as the best predictor, which is equivalent to a random walk. There is nothing wrong with that even if it has low predictive ability (the prediction is last years value). But a close look at the model comparison plot above shows that exponential smoothing has done better the last several years but did poorly 4 and 5 years ago when the population dropped precipitously. We can verify that by looking at the MAD for the past 3 years... which would suggest exponential smoothing as a better model.
+
+```{r age 5 3 year MAD}
+#compare models
+## Notice most of the difference comes from 4 and 5 years ago when the population was in serious decline.
+##exponential smoothing better recently
+comp_models2(dat5, 5, years = 3)
+```
+
+```{r age 5 predictions, echo=FALSE, include = FALSE}
+#Note to Nick. Without contect I would not show these results at all.
+
 #Moving average model
 tail(dat5)
 exp(mean(dat5$ln[29:33]))
@@ -103,10 +103,8 @@ forecast5_2024 <- exp(predict(ARIMA5_diff, n.ahead = 1)$pred)
 exp(predict(ets5, h = 1)[["mean"]][1])
 ```
 
-
-
 ## Age 6 models
-```{r age 6 models, echo=FALSE}
+```{r age 6 models}
 #Moving average
 ## predictions
 dat6$moving_avg_pred <- pred_ma(dat6$age6_ln, yrs = 5)[, "median"]
@@ -161,8 +159,7 @@ dat6$ricker_pred <- exp(pred_arima(rick6_diff, x = rick6$model$lnRS, xreg = rick
 comp_models2(dat6, 6)
 ```
 
-## Age 6 predictions
-```{r age 6 predictions, echo=FALSE}
+```{r age 6 predictions, echo=FALSE, include = FALSE}
 #moving average model
 tail(dat6)
 exp(mean(dat6$age6_ln[28:32]))
@@ -183,7 +180,7 @@ exp(predict(rick6_diff, 1, newxreg = 17405)[[1]]) * 17405
 ```
 ## Age 7 models
 
-```{r age 7 models, echo=FALSE}
+```{r age 7 models}
 #Moving average
 ## predictions
 dat7$moving_avg_pred <- pred_ma(dat7$age7_ln, yrs = 5)[, "median"]
@@ -228,7 +225,7 @@ comp_models2(dat7, 7)
 
 ## Age 7 predictions
 
-```{r age 7 predictions, echo=FALSE}
+```{r age 7 predictions, echo=FALSE, include = FALSE}
 #moving average model
 tail(dat7)
 forecast7_2024 <- exp(mean(dat7$age7_ln[27:31]))
@@ -249,7 +246,7 @@ tail(brood, 10)
 exp(predict(rick7, newdata = data.frame(S = 20583))) * 20583
 ```
 
-```{r PI calculations, echo=FALSE}
+```{r PI calculations}
 ################################# Calculate prediction intervals ##################################################
 ############################## Carefull!!!!! modify this before you run it so you don't overwrite dat objects #######
 #2024 forecast
@@ -305,5 +302,3 @@ exp(log(forecast_2024) + s * c(-t , t))
 
 ```
 
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
