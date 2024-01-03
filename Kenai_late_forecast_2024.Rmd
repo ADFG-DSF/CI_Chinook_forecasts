@@ -14,11 +14,11 @@ knitr::opts_chunk$set(echo = TRUE)
 ## 2024 Kenai Early Run Forecast
 ```{r read in data, echo=FALSE}
 rm(list = ls())
-brood <- read.csv("H:\\Analyses\\Kenai\\Kenai late run 2024\\KenaiLate2024.csv")
+brood <- read.csv(".\\KenaiLate2024.csv") #you can make the reference relative so your analysis is portable
 ```
 
 ```{r updated comp models function, echo=FALSE}
-#Here is the com models code w mape added in.
+#Here is the com models function w mape added in.
 
 library(tidyverse)
 
@@ -56,7 +56,6 @@ library(preseason)
 
 ```{r prep data, echo=FALSE}
 
-
 dat5 <- prep_brood(brood, 5:5)
 dat6 <- prep_brood(brood, 5:6)
 dat7 <- prep_brood(brood, 5:7)
@@ -65,250 +64,244 @@ dat7 <- prep_brood(brood, 5:7)
 
 ## Age 5 models
 
-```{r age 3, echo=FALSE}
-
+```{r age 5 models, echo=FALSE}
+#Moving average model
+## predictions
 dat5$md5_pred <- pred_ma(dat5$ln, yrs = 5)[, "median"]
 
-## prediction
-tail(dat5)
-exp(mean(dat5$ln[29:33]))
-
-#univariate
-forecast::tsdisplay(dat5$ln)
-forecast::auto.arima(dat5$ln) # wants to difference
-mu_ar1age5 <- arima(dat5$ln, order=c(0,1,0))
-summary(mu_ar1age5)
-temp5U <- pred_arima(mu_ar1age5, x = dat5$ln)
-
+#univariate ARIMA
+forecast::tsdisplay(dat5$ln, )
+forecast::auto.arima(dat5$ln) # This is a random walk model (the most naive forecast out there)
+ARIMA5_diff <- arima(dat5$ln, order=c(0,1,0))
+summary(ARIMA5_diff)
+## predictions
+temp5U <- pred_arima(ARIMA5_diff, x = dat5$ln)
 dat5$univariate_pred <- exp(temp5U[1,])
 
-#exponential smooting
+#exponential smoothing
 ets5 <- forecast::ets(dat5$ln)
+## predictions
 dat5$es_pred <- pred_es(dat5$ln)
 
 #compare models
-
-comp_models2(dat5, 5)
+## Notice most of the difference comes from 4 and 5 years ago when the population was in serious decline.
+##exponential smoothing better recently
+comp_models2(dat5, 5, years = 3)
+comp_models2(dat5, 5, years = 5)
 ```
 
 ## Age 5 predictions
-```{r compare models and calculate predictions for age 6, echo=FALSE}
-
-#ets
-exp(predict(ets5, h = 1)[["mean"]][1])
-
-#the moving average model w median transform
+```{r age 5 predictions, echo=FALSE}
+#Moving average model
 tail(dat5)
 exp(mean(dat5$ln[29:33]))
 
+#univariate ARIMA
+forecast5_2024 <- exp(predict(ARIMA5_diff, n.ahead = 1)$pred)
 
-#time series
-exp(predict(mu_ar1age5, n.ahead = 1)$pred)
-
+#exponential smoothing
+exp(predict(ets5, h = 1)[["mean"]][1])
 ```
 
 
 
 ## Age 6 models
 ```{r age 6 models, echo=FALSE}
-#sibling model
-
-ggplot2::ggplot(dat6, ggplot2::aes(x = age5_ln, y = age6_ln)) + ggplot2::geom_point()
-sib6 <- lm(age6_ln ~ age5_ln, data = dat6)
-
-
-summary(sib6)
-par(mfrow = c(2,2)); plot(sib6); par(mfrow = c(1,1))
-forecast::tsdisplay(residuals(sib6))
-temp6 <- pred_lm(sib6)
-
-
-dat6$sibling_pred <- exp(temp6[1,])
-
-
-
-#ricker
-plot(dat6$S, dat6$lnRS)
-rick6 <- lm(lnRS ~ S, data = dat6)
-summary(rick6)
-par(mfrow = c(2,2)); plot(rick6); par(mfrow = c(1,1))
-
-forecast::tsdisplay(residuals(rick6))
-forecast::auto.arima(rick6$model$lnRS, xreg = rick6$model$S)
-rick6_ar1 <- arima(rick6$model$lnRS, order=c(1,0,0), xreg = rick6$model$S, method = "ML")
-AIC(rick6, rick6_ar1)
-rick6_ar1
-forecast::tsdisplay(residuals(rick6_ar1))
-## ar1 looks best. Best AIC and no serial correlation
-dat6$ricker_pred <- exp(pred_arima(rick6_ar1, x = rick6$model$lnRS, xreg = rick6$model$S)[1,]) * rick6$model$S
-
 #Moving average
-
+## predictions
 dat6$moving_avg_pred <- pred_ma(dat6$age6_ln, yrs = 5)[, "median"]
 
-#univariate
+#univariate ARIMA
 forecast::tsdisplay(dat6$age6_ln)
-forecast::auto.arima(dat6$age6_ln) # wants to difference
-mu_ar1age6 <- arima(dat6$age6_ln, order=c(0,1,0))
-summary(mu_ar1age6)
-temp6U <- pred_arima(mu_ar1age6, x = dat6$age6_ln)
-
-dat6$univariate_pred <- exp(temp6U[1,])
+forecast::auto.arima(dat6$age6_ln) # Suggests a random walk
+ARIMA6_diff <- arima(dat6$age6_ln, order=c(0,1,0))
+ARIMA6_diff
+forecast::tsdisplay(residuals(ARIMA6_diff)) #information free
+#predictions
+temp_ARIMA6 <- pred_arima(ARIMA6_diff, x = dat6$age6_ln) #more informative names
+dat6$ARIMA_pred <- exp(temp_ARIMA6[1,])
 
 #exponential smooting
 ets6 <- forecast::ets(dat6$age6_ln)
+#predictions
 dat6$es_pred <- pred_es(dat6$age6_ln)
 
+#sibling model
+ggplot2::ggplot(dat6, ggplot2::aes(x = age5_ln, y = age6_ln)) + #this relationship looks pretty good. Shame not to use.
+  ggplot2::geom_point()
+sib6 <- lm(age6_ln ~ age5_ln, data = dat6)
+summary(sib6) #model significant
+par(mfrow = c(2,2)); plot(sib6); par(mfrow = c(1,1)) #residuals not terrible
+forecast::tsdisplay(residuals(sib6)) #but appear to contain some additional information
+forecast::auto.arima(sib6$model$age6_ln, xreg = sib6$model$age5_ln) #suggests we should difference the data first.
+sib6_diff <- arima(sib6$model$age6_ln, order=c(0,1,0), xreg = sib6$model$age5_ln, method = "ML")
+sib6_diff
+AIC(sib6_diff, ARIMA6_diff)
+forecast::tsdisplay(residuals(sib6_diff)) #better
+## predictions
+dat6$sibling_pred <- exp(pred_arima(sib6_diff, x = sib6$model$age6_ln, xreg = sib6$model$age5_ln)[1,])
+
+#Ricker
+plot(dat6$S, dat6$lnRS)
+rick6 <- lm(lnRS ~ S, data = dat6)
+summary(rick6) #Note the model in barely significant
+par(mfrow = c(2,2)); plot(rick6); par(mfrow = c(1,1)) 
+dat6[19, ] #Note high leverage residual is the largest value of S
+forecast::tsdisplay(residuals(rick6)) #information left in the residuals
+forecast::auto.arima(rick6$model$lnRS, xreg = rick6$model$S) #suggests we should difference the data first.
+rick6_diff <- arima(rick6$model$lnRS, order=c(0,1,0), xreg = rick6$model$S, method = "ML")
+AIC(rick6, rick6_diff)
+rick6_diff
+AIC(rick6_diff, ARIMA6_diff)
+forecast::tsdisplay(residuals(rick6_diff)) #better
+## predictions
+dat6$ricker_pred <- exp(pred_arima(rick6_diff, x = rick6$model$lnRS, xreg = rick6$model$S)[1,]) * rick6$model$S
 
 #compare models
-
 comp_models2(dat6, 6)
 ```
 
 ## Age 6 predictions
-```{r compare models and calculate predictions for age 6, echo=FALSE}
+```{r age 6 predictions, echo=FALSE}
+#moving average model
+tail(dat6)
+exp(mean(dat6$age6_ln[28:32]))
 
-
-
+#univariate ARIMA
+exp(predict(ARIMA6_diff, n.ahead = 1)$pred)
 
 #ets
 exp(predict(ets6, h = 1)[["mean"]][1])
 
-#the moving average model w median transform
-tail(dat6)
-exp(mean(dat6$age6_ln[28:32]))
-
-
 #sibling
 tail(brood, 10)
-
-pred_sib6 <- predict(sib6, newdata = data.frame(age5_ln = log(5214)), se.fit = TRUE)
-exp(pred_sib6$fit)
-
-#time series
-exp(predict(mu_ar1age6, n.ahead = 1)$pred)
+forecast6_2024 <- exp(predict(sib6_diff, 1, newxreg = log(5214))[[1]])
 
 #ricker 
 tail(brood, 10)
-exp(predict(rick6_ar1, 1, newxreg = 17405)[[1]]) * 17405
+exp(predict(rick6_diff, 1, newxreg = 17405)[[1]]) * 17405
 ```
 ## Age 7 models
 
 ```{r age 7 models, echo=FALSE}
-#sibling model
+#Moving average
+## predictions
+dat7$moving_avg_pred <- pred_ma(dat7$age7_ln, yrs = 5)[, "median"]
 
+#univariate ARIMA
+forecast::tsdisplay(dat7$age7_ln)
+forecast::auto.arima(dat7$age7_ln) # Random walk again
+ARIMA7_diff <- arima(dat7$age7_ln, order=c(0,1,0))
+summary(ARIMA7_diff)
+tempU7 <- pred_arima(ARIMA7_diff, x = dat7$age7_ln)
+## predictions
+dat7$univariate_pred <- exp(tempU7[1,])
+
+#exponential smoothing
+ets7 <- forecast::ets(dat7$age7_ln)
+## predictions
+dat7$es_pred <- pred_es(dat7$age7_ln)
+
+#sibling model
 ggplot2::ggplot(dat7, ggplot2::aes(x = age6_ln, y = age7_ln)) + ggplot2::geom_point()
 sib7 <- lm(age7_ln ~ age6_ln, data = dat7)
-
-
 summary(sib7)
 par(mfrow = c(2,2)); plot(sib7); par(mfrow = c(1,1))
 forecast::tsdisplay(residuals(sib7))
+## predictions
 temp7 <- pred_lm(sib7)
-
-
 dat7$sibling_pred <- exp(temp7[1,])
 
-
-
-#ricker
-
+#Ricker
 plot(dat7$S, dat7$lnRS)
 rick7 <- lm(lnRS ~ S, data = dat7)
-summary(rick7)
+summary(rick7) #model insignificant
 par(mfrow = c(2,2)); plot(rick7); par(mfrow = c(1,1))
-
-forecast::tsdisplay(residuals(rick7))
-forecast::auto.arima(rick7$model$lnRS, xreg = rick7$model$S)
-rick7_ar1 <- arima(rick7$model$lnRS, order=c(1,0,0), xreg = rick7$model$S, method = "ML")
-AIC(rick7, rick7_ar1)
-rick7_ar1
-forecast::tsdisplay(residuals(rick7_ar1))
-## ar1 looks best. Best AIC and no serial correlation
-dat7$ricker_pred <- exp(pred_arima(rick7_ar1, x = rick7$model$lnRS, xreg = rick7$model$S)[1,]) * rick7$model$S
-
-#Moving average
-
-dat7$moving_avg_pred <- pred_ma(dat7$age7_ln, yrs = 5)[, "median"]
-
-#univariate
-forecast::tsdisplay(dat7$age7_ln)
-forecast::auto.arima(dat7$age7_ln) # wants to difference
-mu_ar1age7 <- arima(dat7$age7_ln, order=c(0,1,0))
-summary(mu_ar1age7)
-tempU7 <- pred_arima(mu_ar1age7, x = dat7$age7_ln)
-
-dat7$univariate_pred <- exp(tempU7[1,])
-
-#exponential smooting
-ets7 <- forecast::ets(dat7$age7_ln)
-dat7$es_pred <- pred_es(dat7$age7_ln)
-
+forecast::tsdisplay(residuals(rick7)) # I  don't see a lot of information in these
+## predictions
+temp_Ricker7 <- exp(pred_lm(rick7)) * rick7$model$S
+dat7$ricker_pred <- temp_Ricker7[1, ]
 
 #compare models
-
 comp_models2(dat7, 7)
 ```
 
 ## Age 7 predictions
 
-```{r compare models and calculate predictions for age 7, echo=FALSE}
-
-#ricker 
-tail(brood, 10)
-exp(predict(rick7_ar1, 1, newxreg = 20583)[[1]]) * 20583
-
+```{r age 7 predictions, echo=FALSE}
+#moving average model
+tail(dat7)
+forecast7_2024 <- exp(mean(dat7$age7_ln[27:31]))
 
 #ets
 exp(predict(ets7, h = 1)[["mean"]][1])
 
-#the moving average model w median transform
-tail(dat7)
-exp(mean(dat7$age7_ln[27:31]))
-
+#univariate ARIMA
+exp(predict(ARIMA7_diff, n.ahead = 1)$pred)
 
 #sibling
 tail(brood,10)
 pred_sib7 <- predict(sib7, newdata = data.frame(age6_ln = log(9322)), se.fit = TRUE)
 exp(pred_sib7$fit)
 
-#time series
-exp(predict(mu_ar1age7, n.ahead = 1)$pred)
+#ricker 
+tail(brood, 10)
+exp(predict(rick7, newdata = data.frame(S = 20583))) * 20583
 ```
+
 ```{r PI calculations, echo=FALSE}
 ################################# Calculate prediction intervals ##################################################
 ############################## Carefull!!!!! modify this before you run it so you don't overwrite dat objects #######
-library(magrittr)
+#2024 forecast
+forecast5_2024 #ARIMA
+forecast6_2024 #Sibling
+forecast7_2024 # Moving Average
+forecast_2024 <- forecast5_2024[1] + forecast6_2024[1] + forecast7_2024
+
+#Dataframe keypunched from Tony's memo.
+#I think this methods is a touch better be it retains variability associated with the model selection process.
+#admittedly the selection process has changed. but there is also no guarantee we would choose the same models in past years. 
+#Historic age4-6 forecast and actual
+dat <- 
+  data.frame(
+    forecast = c(33613, 21508, 21746, 22707, 18406, 16004, 13630),
+    actual = c(30734, 18364, 13360, 12226, 12794, 14078, 14537)
+  )
+
+#forecasts bias high, worst at small run sizes
+ggplot2::ggplot(dat, ggplot2::aes(x = actual, y = forecast)) +
+  ggplot2::geom_point() +
+  ggplot2::geom_smooth(method = "lm", se = TRUE) +
+  ggplot2::geom_abline(slope = 1)
+
+dat$resid <- log(dat$forecast) - log(dat$actual)
+#CI on log scale
+#forecast includes age3 while errors fo not.
+s <- sqrt(sum(dat$resid^2)/dim(dat)[1])
+t <- qt(.90, df = dim(dat)[1] - 1)
+exp(log(forecast_2024) + s * c(-t , t))
 
 
 
-
-#caluclate return year and prep data
-
-
-dat5$ryr <- dat5$byr + 5
-dat6$ryr <- dat6$byr + 6
-dat7$ryr <- dat7$byr + 7
-
-
-dat5CI <- dat5[dat5$ryr %in% 2019:2023, c("ryr", "age5", "univariate_pred")]
-dat6CI <- dat6[dat6$ryr %in% 2019:2023, c("ryr", "age6", "es_pred")]
-dat7CI <- dat7[dat7$ryr %in% 2019:2023, c("ryr", "age7", "univariate_pred")]
-
-#calculate errors
-
-
-errors <- 
-  dplyr::left_join(dat5CI, dat6CI, "ryr") %>%
-  dplyr::left_join(dat7CI,"ryr") %>%
-  dplyr::mutate(return = age5 + age6 + age7,
-                hind = univariate_pred.x  + es_pred + univariate_pred.y,
-                error = hind - return)
-
-
-
-#rmse 80% bounds
-sqrt(mean(errors$error^2)) * c(qt(.1, 4), qt(.9, 4))
+# #calculate return year and prep data
+# dat5$ryr <- dat5$byr + 5
+# dat6$ryr <- dat6$byr + 6
+# dat7$ryr <- dat7$byr + 7
+# 
+# dat5CI <- dat5[dat5$ryr %in% 2019:2023, c("ryr", "age5", "univariate_pred")] #Note some of these might change if we use the work I did here.
+# dat6CI <- dat6[dat6$ryr %in% 2019:2023, c("ryr", "age6", "sibling_pred")]
+# dat7CI <- dat7[dat7$ryr %in% 2019:2023, c("ryr", "age7", "moving_avg_pred")]
+# 
+# #calculate errors
+# errors <- 
+#   dplyr::left_join(dat5CI, dat6CI, "ryr") %>%
+#   dplyr::left_join(dat7CI,"ryr") %>%
+#   dplyr::mutate(return = age5 + age6 + age7, #Note the data is posterior medians so they will not sum to the posterior median total.
+#                 hind = univariate_pred  + sibling_pred + moving_avg_pred,
+#                 error = log(hind) - log(return))
+# 
+# #rmse 80% bounds
+# exp(log(forecast_2024) + sqrt(sum(errors$error^2)/dim(errors)[1]) * c(qt(.1, dim(errors)[1] - 1), qt(.9, dim(errors)[1] - 1)))
 
 ```
 
