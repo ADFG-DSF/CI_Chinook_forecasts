@@ -1,5 +1,5 @@
 ---
-title: "Kenai 2024"
+title: "Kenai late run 2024 forecast"
 author: "Nick DeCovich"
 date: "2023-11-06"
 output:
@@ -69,7 +69,7 @@ ARIMA5_diff <- arima(dat5$ln, order=c(0,1,0))
 summary(ARIMA5_diff)
 ## predictions
 temp5U <- pred_arima(ARIMA5_diff, x = dat5$ln)
-dat5$univariate_pred <- exp(temp5U[1,])
+dat5$ARIMA_pred <- exp(temp5U[1,])
 
 #exponential smoothing
 ets5 <- forecast::ets(dat5$ln)
@@ -90,7 +90,7 @@ comp_models2(dat5, 5, years = 3)
 ```
 
 ```{r age 5 predictions, echo=FALSE, include = FALSE}
-#Note to Nick. Without contect I would not show these results at all.
+#Note to Nick. Without context I would not show these results at all.
 
 #Moving average model
 tail(dat5)
@@ -228,10 +228,10 @@ comp_models2(dat7, 7)
 ```{r age 7 predictions, echo=FALSE, include = FALSE}
 #moving average model
 tail(dat7)
-forecast7_2024 <- exp(mean(dat7$age7_ln[27:31]))
+exp(mean(dat7$age7_ln[27:31]))
 
 #ets
-exp(predict(ets7, h = 1)[["mean"]][1])
+forecast7_2024 <- exp(predict(ets7, h = 1)[["mean"]][1])
 
 #univariate ARIMA
 exp(predict(ARIMA7_diff, n.ahead = 1)$pred)
