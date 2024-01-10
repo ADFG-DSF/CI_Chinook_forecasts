@@ -1,0 +1,272 @@
+---
+title: "Kenai early run 2024 forecast"
+author: "Nick DeCovich"
+date: "2023-11-06"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+
+rm(list = ls())
+
+devtools::install_github("ADFG-DSF/preseason")
+library(preseason)
+library(tidyverse)
+
+#Read in Kenai early brood table
+brood <- read.csv("..\\data\\brood_KenaiEarly_2023.csv")
+
+#prep data for analysis
+dat5 <- prep_brood(brood, 5:5)
+dat6 <- prep_brood(brood, 5:6)
+dat7 <- prep_brood(brood, 5:7)
+```
+
+## Age 5 models
+```{r age 5 models}
+#Moving average model
+## hindcast predictions
+dat5$ma5_pred <- pred_ma(dat5$ln, yrs = 5)[, "median"]
+
+#ARIMA
+forecast::tsdisplay(dat5$ln)
+forecast::auto.arima(dat5$ln) # wants to difference with a ma term
+mu_ARIMA5 <- arima(dat5$ln, order=c(0,1,1))
+summary(mu_ARIMA5)
+## hindcast predictions
+temp5U <- pred_arima(mu_ARIMA5, x = dat5$ln)
+dat5$ARIMA_pred <- exp(temp5U[1,])
+
+#exponential smoothing
+ets5 <- forecast::ets(dat5$ln)
+## hindcast predictions
+dat5$es_pred <- pred_es(dat5$ln)
+
+#compare models
+(comp_age5 <- comp_models(dat5, comp_age = 5, years = 5, metric = c("md", "mad", "mape")))
+
+# dat5 %>% 
+#   dplyr::select(byr, age5, dplyr::ends_with("pred")) %>% 
+#   tidyr::gather(type, pred, -byr, -age5) %>% 
+#   dplyr::mutate(d = pred - age5, 
+#                 pe = d/age5) %>%
+#   filter(byr %in% 2014:2018)
+```
+
+## Age 5 forecast table
+For me (Adam), this is a tricky choice. The mad would suggest the moving average but notice we have missed high every single year. I picked the ARIMA model but it is open to debate. Not much consequence with any choice.
+```{r age 5 predictions}
+## Moving average forecast
+#tail(dat5)
+forecast5_ma5 <- exp(mean(dat5$ln[29:33]))
+
+#univariate ARIMA
+forecast5_2024 <- forecast5_ARIMA <- exp(predict(mu_ARIMA5, n.ahead = 1)$pred) 
+
+#exponential smoothing
+forecast5_es <- exp(predict(ets5, h = 1)[["mean"]][1])
+
+#merge 2024 forecast estimate for each model with MAD table
+named_df <- function(...){
+    names <- as.list(substitute(list(...)))[-1L]
+    result <- list(...)
+    list(names, result) %>% as.data.frame()
+    data.frame(name = as.character(names),
+               forecast = round(as.numeric(result), 0)) %>%
+      mutate(mod = gsub(".*_(.*)", "\\1", name))
+}
+
+comp_age5[[2]] %>%
+  mutate(mod = gsub("(.*)_.*", "\\1", type)) %>%
+  right_join(named_df(forecast5_ma5, forecast5_ARIMA, forecast5_es), by = "mod") %>%
+  select(mod, forecast, md, mad, mape)
+```
+
+
+
+## Age 6 models
+```{r age 6 models}
+#Moving average
+#hindcast predictions
+dat6$ma5_pred <- pred_ma(dat6$age6_ln, yrs = 5)[, "median"]
+
+#univariate
+forecast::tsdisplay(dat6$age6_ln)
+forecast::auto.arima(dat6$age6_ln) # wants to difference
+mu_ARIMA6 <- arima(dat6$age6_ln, order=c(0,1,0))
+summary(mu_ARIMA6)
+#hindcast predictions
+temp6U <- pred_arima(mu_ARIMA6, x = dat6$age6_ln)
+dat6$ARIMA_pred <- exp(temp6U[1,])
+
+#exponential smoothing
+ets6 <- forecast::ets(dat6$age6_ln)
+#hindcast predictions
+dat6$es_pred <- pred_es(dat6$age6_ln)
+
+#sibling model
+ggplot2::ggplot(dat6, ggplot2::aes(x = age5_ln, y = age6_ln, color = byr)) + 
+  ggplot2::geom_point()
+sib6 <- lm(age6_ln ~ age5_ln, data = dat6)
+summary(sib6)
+par(mfrow = c(2,2)); plot(sib6); par(mfrow = c(1,1))
+# temp6 <- pred_lm(sib6) #compare regular sibling with the ARIMA sibling (ARIMA sibling much lower 5 year mad)
+# dat6$sibling_pred <- exp(temp6[1,])
+forecast::tsdisplay(residuals(sib6))
+forecast::auto.arima(sib6$model$age6_ln, xreg = sib6$model$age5_ln) #suggests we should difference with a ma term.
+sib6_diffma <- arima(sib6$model$age6_ln, order=c(0,1,1), xreg = sib6$model$age5_ln, method = "ML")
+sib6_diffma
+forecast::tsdisplay(residuals(sib6_diffma)) #better
+## hindcast predictions
+dat6$sibling_pred <- exp(pred_arima(sib6_diffma, x = sib6$model$age6_ln, xreg = sib6$model$age5_ln)[1,])
+
+#ricker
+plot(dat6$S, dat6$lnRS)
+rick6 <- lm(lnRS ~ S, data = dat6)
+summary(rick6)
+par(mfrow = c(2,2)); plot(rick6); par(mfrow = c(1,1))
+forecast::tsdisplay(residuals(rick6))
+forecast::auto.arima(rick6$model$lnRS, xreg = rick6$model$S)
+rick6_ar1 <- arima(rick6$model$lnRS, order=c(0,1,0), xreg = rick6$model$S, method = "ML")
+rick6_ar1
+forecast::tsdisplay(residuals(rick6_ar1))
+dat6$ricker_pred <- exp(pred_arima(rick6_ar1, x = rick6$model$lnRS, xreg = rick6$model$S)[1,]) * rick6$model$S
+
+#compare models
+(comp_age6 <- comp_models(dat6, comp_age = 6, years = 5, metric = c("md", "mad", "mape")))
+```
+
+## Age 6 forecast table
+```{r age 6 predictions}
+#the moving average model w median transform
+#tail(dat6)
+forecast6_2024 <- forecast6_ma5 <- exp(mean(dat6$age6_ln[28:32]))
+
+#univariate ARIMA
+forecast6_ARIMA <- exp(predict(mu_ARIMA6, n.ahead = 1)$pred)
+
+#ets
+forecast6_es <- exp(predict(ets6, h = 1)[["mean"]][1])
+
+#sibling
+#tail(brood, 10)
+pred_sib6 <- predict(sib6, newdata = data.frame(age5_ln = log(1443)), se.fit = TRUE)
+forecast6_sibling <- exp(pred_sib6$fit)
+
+#ricker 
+#tail(brood, 10)
+forecast6_ricker <- exp(predict(rick6_ar1, 1, newxreg = 2934)[[1]]) * 2934
+
+comp_age6[[2]] %>%
+  mutate(mod = gsub("(.*)_.*", "\\1", type)) %>%
+  right_join(named_df(forecast6_ma5, forecast6_ARIMA, forecast6_es, forecast6_sibling, forecast6_ricker), by = "mod") %>%
+  select(mod, forecast, md, mad, mape)
+```
+## Age 7 models
+```{r age 7 models}
+#Moving average
+## hindcast predictions
+dat7$ma5_pred <- pred_ma(dat7$age7_ln, yrs = 5)[, "median"]
+
+#univariate ARIMA
+forecast::tsdisplay(dat7$age7_ln)
+forecast::auto.arima(dat7$age7_ln) # wants to difference w an ar1 term
+mu_ARIMA7 <- arima(dat7$age7_ln, order=c(1,1,0))
+summary(mu_ARIMA7)
+## hindcast predictions
+tempU7 <- pred_arima(mu_ARIMA7, x = dat7$age7_ln)
+dat7$ARIMA_pred <- exp(tempU7[1,])
+
+#exponential smooting
+ets7 <- forecast::ets(dat7$age7_ln)
+dat7$es_pred <- pred_es(dat7$age7_ln)
+
+#sibling model
+ggplot2::ggplot(dat7, ggplot2::aes(x = age6_ln, y = age7_ln, color = byr)) + ggplot2::geom_point()
+sib7 <- lm(age7_ln ~ age6_ln, data = dat7)
+summary(sib7)
+par(mfrow = c(2,2)); plot(sib7); par(mfrow = c(1,1))
+forecast::tsdisplay(residuals(sib7))
+##hindcast predictions
+temp7 <- pred_lm(sib7)
+dat7$sibling_pred <- exp(temp7[1,])
+
+#ricker
+plot(dat7$S, dat7$lnRS)
+rick7 <- lm(lnRS ~ S, data = dat7)
+summary(rick7)
+par(mfrow = c(2,2)); plot(rick7); par(mfrow = c(1,1))
+
+forecast::tsdisplay(residuals(rick7))
+forecast::auto.arima(rick7$model$lnRS, xreg = rick7$model$S) #wants to difference
+rick7_ARIMA1 <- arima(rick7$model$lnRS, order=c(0,1,0), xreg = rick7$model$S, method = "ML")
+rick7_ARIMA1
+forecast::tsdisplay(residuals(rick7_ARIMA1))
+## hindcast predictions
+dat7$ricker_pred <- exp(pred_arima(rick7_ARIMA1, x = rick7$model$lnRS, xreg = rick7$model$S)[1,]) * rick7$model$S
+
+#compare models
+(comp_age7 <- comp_models(dat7, comp_age = 7, years = 5, metric = c("md", "mad", "mape")))
+```
+
+## Age 7 forecast table
+```{r age 7 predictions}
+#the moving average model w median transform
+#tail(dat7)
+forecast7_2024 <- forecast7_ma5 <- exp(mean(dat7$age7_ln[27:31]))
+
+#ARIMA
+forecast7_ARIMA <- exp(predict(mu_ARIMA7, n.ahead = 1)$pred)
+
+#ets
+forecast7_es <- exp(predict(ets7, h = 1)[["mean"]][1])
+
+#sibling
+#tail(brood,10)
+pred_sib7 <- predict(sib7, newdata = data.frame(age6_ln = log(608)), se.fit = TRUE)
+forecast7_sibling <- exp(pred_sib7$fit)
+
+#ricker 
+#tail(brood, 10)
+forecast7_ricker <- exp(predict(rick7_ARIMA1, 1, newxreg = 6678)[[1]]) * 6678
+
+comp_age7[[2]] %>%
+  mutate(mod = gsub("(.*)_.*", "\\1", type)) %>%
+  right_join(named_df(forecast7_ma5, forecast7_ARIMA, forecast7_es, forecast7_sibling, forecast7_ricker), by = "mod") %>%
+  select(mod, forecast, md, mad, mape)
+```
+## 2024 Forecast & Prediction Interval
+```{r PI calculations}
+################################# Calculate prediction intervals ##################################################
+#2024 forecast
+forecast_2024 <- forecast5_2024[1] + forecast6_2024 + forecast7_2024
+
+#Dataframe keypunched from Tony's memo.
+#I think this methods is a touch better be it retains variability associated with the model selection process.
+#admittedly the selection process has changed, but there is also no guarantee we would choose the same models in past years. 
+#Historic age4-6 forecast and actual
+dat <- 
+  data.frame(
+    forecast = c(6526, 5499, 3168, 4794, 4391, 4272, 2914),
+    actual = c(7401, 3067, 4131, 2472, 4142, 2052, 1975)
+  )
+
+#forecasts bias high, worst at small run sizes
+ggplot2::ggplot(dat, ggplot2::aes(x = actual, y = forecast)) +
+  ggplot2::geom_point() +
+  ggplot2::geom_smooth(method = "lm", se = TRUE) +
+  ggplot2::geom_abline(slope = 1)
+
+#2024 Forecast
+forecast_2024
+
+#Prediction interval
+dat$resid <- log(dat$forecast) - log(dat$actual)
+s <- sqrt(sum(dat$resid^2)/dim(dat)[1])
+t <- qt(.90, df = dim(dat)[1] - 1)
+exp(log(forecast_2024) + s * c(-t , t))
+```
