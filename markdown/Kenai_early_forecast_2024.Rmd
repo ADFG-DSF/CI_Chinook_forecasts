@@ -4,8 +4,6 @@ author: "Nick DeCovich"
 date: "2023-11-06"
 output:
   html_document: default
-  pdf_document: default
-  word_document: default
 ---
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -107,7 +105,11 @@ dat6$ARIMA_pred <- exp(temp6U[1,])
 ets6 <- forecast::ets(dat6$age6_ln)
 #hindcast predictions
 dat6$es_pred <- pred_es(dat6$age6_ln)
+```
 
+The sibling model used here is a little different than the one Tony has been using. I'd name this one "Sibling Model" and describe it as "A regression between the natural logs of abundance in an age class and the most recent return of siblings from the same brood year". This is the same language Nick uses.
+
+```{r}
 #sibling model
 ggplot2::ggplot(dat6, ggplot2::aes(x = age5_ln, y = age6_ln, color = byr)) + 
   ggplot2::geom_point()
@@ -138,6 +140,18 @@ dat6$ricker_pred <- exp(pred_arima(rick6_ar1, x = rick6$model$lnRS, xreg = rick6
 
 #compare models
 (comp_age6 <- comp_models(dat6, comp_age = 6, years = 5, metric = c("md", "mad", "mape")))
+```
+
+Since the decision between the ARIMA and moving average model is very close it might make sense to take a look at the forecasts and actuals used to calculate the MAD and MAPE. We see a little bit of why the MAPE can be biased. Let's take a look at the smallest error for the ma model (by = 2015) and compare that the the largest error by the ma model (by = 2017). For the absolute deviation metric (d) we have a ratio of 818 / 31 = 26 while for the percent error metric (pe) we have a ratio of 1.34 / 0.017 = 78. The percent error metric heavily weights the large over forecast in brood year 2017 (when the actual run size was small) and this drives the MAPE higher than the MAD even though the moving average model was better or the same in the other 4 years. The issue is that there is no way to have a percent error larger than 1 for an under forecast, and the MAPE is biased because of this property. How often that matters for fish forecasts is debatable but it is understood to be biased in forecast applications with robust sample sizes. I don't want to belabor the point and will try to demonstrate this better before next year's memo. For this year's memo I think the thing to realize is that the two models are very close and while you can make a judgement call either way we should probably be able to speak to this year by year performance if pushed to explain the decision.
+
+```{r}
+dat6 %>% 
+  dplyr::select(byr, age6, dplyr::ends_with("pred")) %>% 
+  tidyr::gather(type, pred, -byr, -age6) %>% 
+  dplyr::mutate(d = pred - age6, pe = d/age6) %>% 
+  dplyr::group_by(type) %>% 
+  dplyr::top_n(5, byr) %>%
+  dplyr::filter(type %in% c("ARIMA_pred", "ma5_pred"))
 ```
 
 ## Age 6 forecast table
