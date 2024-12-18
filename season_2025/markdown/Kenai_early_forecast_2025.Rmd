@@ -145,7 +145,7 @@ forecast6 <-
     es_pred = exp(predict(ets6, h = 1)[["mean"]][1]),
     md5_pred = exp(mean(dat6$age6_ln[(length(dat6$ln) - 4):length(dat6$ln)])),
     univariate_pred = exp(predict(ARIMAd1_age6, n.ahead = 1)$pred)[[1]],
-    sibling_pred = exp(predict(sib6, newdata = data.frame(age5_ln = log(max(which(!is.na(brood$age5)))))))
+    sibling_pred = exp(predict(sib6, newdata = data.frame(age5_ln = log(brood$age5[max(which(!is.na(brood$age5)))]))))
   ) %>%
   pivot_longer(cols = everything(), names_to = "type", values_to = "forecast") %>%
   left_join(comp6$table, by = "type") %>%
@@ -206,7 +206,7 @@ forecast7 <-
     es_pred = exp(predict(ets7, h = 1)[["mean"]][1]),
     md5_pred = exp(median(dat7$age7_ln[(length(dat7$ln) - 4):length(dat7$ln)])),
     univariate_pred = exp(predict(ARIMAar1d1_age7, n.ahead = 1)$pred)[[1]],
-    sibling_pred = exp(predict(sib7, newdata = data.frame(age6_ln = log(max(which(!is.na(brood$age6)))))))
+    sibling_pred = exp(predict(sib7, newdata = data.frame(age6_ln = log(brood$age6[max(which(!is.na(brood$age6)))]))))
   ) %>%
   pivot_longer(cols = everything(), names_to = "type", values_to = "forecast") %>%
   left_join(comp7$table, by = "type") %>%
@@ -231,7 +231,7 @@ best_mod <-
   forecast %>%
   group_by(age) %>%
   filter(maape == min(maape)) %>%
-  select(age, type)
+  select(age, type, forecast)
 
 errors <-
   tail(dat5, 5) %>% select(age5, forecast5 = best_mod$type[best_mod$age == 5]) %>%
@@ -243,7 +243,7 @@ errors <-
                 error_ln = log(hind/return)) #errors on the log(prediction) - log(return)
 
 #rmse 80% bounds
-exp(sqrt(mean(errors$error_ln^2)) * c(qt(.1, 5), qt(.9, 5))) * 1489
+exp(sqrt(mean(errors$error_ln^2)) * c(qt(.1, 5), qt(.9, 5))) * sum(best_mod$forecast)
 ```
 
 ```{r}
@@ -272,7 +272,7 @@ ER_table <-
   colformat_double(j = c("maape", "maape_weight"), digits = 2) %>%
   merge_v(~ age) %>%
   valign(j = "age", valign = "top") %>%
-  bold(i = c(2, 6, 10)) %>%
+  bold(i = which(paste0(forecast$type, forecast$age) %in% paste0(best_mod$type, best_mod$age))) %>%
   footnote(i = 2, j = 4:6, 
            value = as_paragraph(
              c(" mean deviation",
