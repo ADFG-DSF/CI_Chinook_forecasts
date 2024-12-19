@@ -13,9 +13,12 @@ knitr::opts_chunk$set(echo = TRUE)
 devtools::install_github("adamreimer/preseason")
 library(preseason)
 library(tidyverse)
+library(flextable)
 
 #read data
 brood <- read.csv("..//data//brood_KenaiEarly_2024.csv")
+forecast_errors <- read.csv("..//..//forecast_error.csv", 
+                            colClasses = c("integer", "character", "integer", "integer", "integer"))
 
 #prep data
 dat5 <- prep_brood(brood, 5:5)
@@ -27,10 +30,10 @@ dat7 <- prep_brood(brood, 5:7)
 ## Age 5 models
 
 ```{r, echo=FALSE}
-# 5 year moving median
+# moving mean
 # add to age 5 data set
 #naming convention is "forecasttype_pred" where md5 means 5 year running median
-dat5$md5_pred <- pred_ma(dat5$ln, yrs = 5)[, "median"]
+dat5$mn3_pred <- pred_ma(dat5$ln, yrs = 3)[, "mean"]
 
 # univariate - time series (ARIMA)
 # name the model with an informative name (ARIMAar1d1ma1_ageX) for (1,1,1)
@@ -56,20 +59,31 @@ dat5$es_pred <- pred_es(dat5$ln)
 ## Age 5 forecast
 
 ```{r, echo=FALSE}
-forecast5 <- 
+forecast5_0 <- 
   data.frame(
     es_pred = exp(predict(ets5, h = 1)[["mean"]][1]),
-    md5_pred = exp(mean(dat5$ln[(length(dat5$ln) - 4):length(dat5$ln)])),
+    mn3_pred = exp(mean(dat5$ln[(length(dat5$ln) - 2):length(dat5$ln)])),
     univariate_pred = exp(predict(ARIMAd1ma1_age5, n.ahead = 1)$pred)
   ) %>%
   pivot_longer(cols = everything(), names_to = "type", values_to = "forecast") %>%
   left_join(comp_5$table, by = "type") %>%
   mutate(
     age = "5",
-    maape_weight =  (1 / maape) / sum(1 / maape),
-    forecast_w = forecast * maape_weight,
-    maape_average = ifelse(maape == min(maape), sum(forecast_w), NA)) %>%
-  select(age, type, forecast, md, mad, maape, maape_weight, maape_average)
+    maape_weight =  (1 / maape) / sum(1 / maape))
+
+forecast5 <- 
+  forecast5_0 %>%
+  rbind(
+    data.frame(
+      age = "5",
+      type = "maape_average",
+      forecast = sum(forecast5_0$maape_weight * forecast5_0$forecast, na.rm = TRUE),
+      md = NA,
+      mad = NA,
+      maape = NA,
+      maape_weight = NA)
+  ) %>%
+  select(age, type, forecast, md, mad, maape, maape_weight)
 
 forecast5
 ```
@@ -78,7 +92,7 @@ forecast5
 
 ```{r, echo=FALSE}
 # Moving geometric mean
-dat6$md5_pred <- pred_ma(dat6$age6_ln, yrs = 5)[, "median"]
+dat6$mn3_pred <- pred_ma(dat6$age6_ln, yrs = 3)[, "mean"]
 
 # univariate - time series (ARIMA)
 forecast::tsdisplay(dat6$age6_ln)
@@ -132,29 +146,41 @@ par(mfrow = c(2,2)); plot(rick6_influence); par(mfrow = c(1,1))
 dat6$ricker_pred <- exp(pred_lm(rick6)[1,]) * rick6$model$S
 
 # compare models
-# Notice the Ricekr really does suck. 100% overforecast and largest error. Remove from forecast.
+# Notice the Ricker really does suck. 100% overforecast and largest error. Remove from forecast.
 # Notice ARIMAsibling is close the the ARIMA but worse. Remove from forecast.
-(comp6 <- comp_models(dat6, comp_age = 6, metric = c("md", "mad", "mape", "maape")))
+# also remove siblig due to poor recent performance and model averaging.
+(comp6 <- comp_models(dat6, comp_age = 6, metric = c("md", "mad", "maape")))
 ```
 
 ## Age 6 predictions
 
 ```{r, echo=FALSE}
-forecast6 <- 
+forecast6_0 <- 
   data.frame(
     es_pred = exp(predict(ets6, h = 1)[["mean"]][1]),
-    md5_pred = exp(mean(dat6$age6_ln[(length(dat6$ln) - 4):length(dat6$ln)])),
-    univariate_pred = exp(predict(ARIMAd1_age6, n.ahead = 1)$pred)[[1]],
-    sibling_pred = exp(predict(sib6, newdata = data.frame(age5_ln = log(brood$age5[max(which(!is.na(brood$age5)))]))))
+    mn3_pred = exp(mean(dat6$age6_ln[(length(dat6$ln) - 2):length(dat6$ln)])),
+    univariate_pred = exp(predict(ARIMAd1_age6, n.ahead = 1)$pred)[[1]]#,
+    #sibling_pred = exp(predict(sib6, newdata = data.frame(age5_ln = log(brood$age5[max(which(!is.na(brood$age5)))]))))
   ) %>%
   pivot_longer(cols = everything(), names_to = "type", values_to = "forecast") %>%
   left_join(comp6$table, by = "type") %>%
   mutate(
     age = "6",
-    maape_weight =  (1 / maape) / sum(1 / maape),
-    forecast_w = forecast * maape_weight,
-    maape_average = ifelse(maape == min(maape), sum(forecast_w), NA)) %>%
-  select(age, type, forecast, md, mad, maape, maape_weight, maape_average)
+    maape_weight =  (1 / maape) / sum(1 / maape))
+
+forecast6 <- 
+  forecast6_0 %>%
+  rbind(
+    data.frame(
+      age = "6",
+      type = "maape_average",
+      forecast = sum(forecast6_0$maape_weight * forecast6_0$forecast, na.rm = TRUE),
+      md = NA,
+      mad = NA,
+      maape = NA,
+      maape_weight = NA)
+  ) %>%
+  select(age, type, forecast, md, mad, maape, maape_weight)
 
 forecast6
 ```
@@ -163,7 +189,7 @@ forecast6
 
 ```{r, echo=FALSE}
 # Moving geometric mean
-dat7$md5_pred <- pred_ma(dat7$age7_ln, yrs = 5)[, "median"]
+dat7$mn3_pred <- pred_ma(dat7$age7_ln, yrs = 3)[, "mean"]
 
 # univariate - time series (ARIMA)
 forecast::tsdisplay(dat7$age7_ln)
@@ -194,65 +220,68 @@ plot(dat7$S, dat7$lnRS)
 rick7 <- lm(lnRS ~ S, data = dat7)
 summary(rick7) #insignificant
 
-#compare models
+# compare models
+# Remove sibling because we don't use it elsewhere and all the 5 ocean forecasts are the same
 (comp7 <- comp_models(dat7, comp_age = 7))
 ```
 
 ## Age 7 predictions
 
 ```{r, echo=FALSE}
-forecast7 <- 
+forecast7_0 <- 
   data.frame(
     es_pred = exp(predict(ets7, h = 1)[["mean"]][1]),
-    md5_pred = exp(median(dat7$age7_ln[(length(dat7$ln) - 4):length(dat7$ln)])),
-    univariate_pred = exp(predict(ARIMAar1d1_age7, n.ahead = 1)$pred)[[1]],
-    sibling_pred = exp(predict(sib7, newdata = data.frame(age6_ln = log(brood$age6[max(which(!is.na(brood$age6)))]))))
+    mn3_pred = exp(mean(dat7$age7_ln[(length(dat7$ln) - 2):length(dat7$ln)])),
+    univariate_pred = exp(predict(ARIMAar1d1_age7, n.ahead = 1)$pred)[[1]]#,
+    #sibling_pred = exp(predict(sib7, newdata = data.frame(age6_ln = log(brood$age6[max(which(!is.na(brood$age6)))]))))
   ) %>%
   pivot_longer(cols = everything(), names_to = "type", values_to = "forecast") %>%
   left_join(comp7$table, by = "type") %>%
   mutate(
     age = "7",
-    maape_weight =  (1 / maape) / sum(1 / maape),
-    forecast_w = forecast * maape_weight,
-    maape_average = ifelse(maape == min(maape), sum(forecast_w), NA)) %>%
-  select(age, type, forecast, md, mad, maape, maape_weight, maape_average)
+    maape_weight =  (1 / maape) / sum(1 / maape))
+
+forecast7 <- 
+  forecast7_0 %>%
+  rbind(
+    data.frame(
+      age = "7",
+      type = "maape_average",
+      forecast = sum(forecast7_0$maape_weight * forecast7_0$forecast, na.rm = TRUE),
+      md = NA,
+      mad = NA,
+      maape = NA,
+      maape_weight = NA)
+  ) %>%
+  select(age, type, forecast, md, mad, maape, maape_weight)
 
 forecast7
 ```
 
 ```{r, echo=FALSE}
-################################# Calculate prediction intervals ##################################################
-############################## Careful!!!!! modify this before you run it so you don't overwrite dat objects #######
 forecast <-
   rbind(forecast5, forecast6) %>%
   rbind(forecast7)
-# This will work if you choose the min maape model. Could just type it in.
-best_mod <- 
-  forecast %>%
-  group_by(age) %>%
-  filter(maape == min(maape)) %>%
-  select(age, type, forecast)
+forecast
 
 errors <-
-  tail(dat5, 5) %>% select(age5, forecast5 = best_mod$type[best_mod$age == 5]) %>%
-  cbind(tail(dat6, 5) %>% select(age6, forecast6 = best_mod$type[best_mod$age == 6])) %>%
-  cbind(tail(dat7, 5) %>% select(age7, forecast7 = best_mod$type[best_mod$age == 7])) %>%
-  dplyr::mutate(return = age5 + age6 + age7,
-                hind= forecast5 + forecast6 + forecast7,
-                error = hind - return,
-                error_ln = log(hind/return)) #errors on the log(prediction) - log(return)
+  forecast_errors %>%
+  filter(run == "early") %>%
+  tail(n = 5) %>%
+  mutate(errors_ln = log(forecast / estimate))
 
-#rmse 80% bounds
-exp(sqrt(mean(errors$error_ln^2)) * c(qt(.1, 5), qt(.9, 5))) * sum(best_mod$forecast)
+# following Tony's lead... use the model average.
+(LRforecast <- sum(forecast$forecast[forecast$type == "maape_average"]))
+# rmse 80% bounds
+(LRforecast_CI <- exp(sqrt(mean(errors$errors_ln^2)) * c(qt(.1, 5), qt(.9, 5))) * LRforecast)
 ```
 
 ```{r}
-library(flextable)
 ER_table <- 
   forecast %>%
   mutate(type = factor(type,
-                       levels = c("es_pred", "md5_pred", "univariate_pred", "sibling_pred"),
-                       labels = c("Exponential Smooth", "5-yr rolling median", "ARIMA", "Sibling"))) %>%
+                       levels = c("es_pred", "mn3_pred", "univariate_pred", "sibling_pred", "maape_average"),
+                       labels = c("Exponential Smooth", "3-yr rolling mean", "ARIMA", "Sibling", "MAAPE model average"))) %>%
   flextable() %>%
   set_header_labels(
     age = "Age",
@@ -261,26 +290,37 @@ ER_table <-
     md = "MD",
     mad = "MAD",
     maape = "MAAPE",
-    maape_weight = "MAAPE \n weight",
-    maape_average = "MAAPE \n Model \n Average"
+    maape_weight = "MAAPE \n weight"
   ) %>%
-  add_header_row(top = TRUE, values = c("", "5-year Average", ""), colwidths = c(3, 3, 2)) %>%
-  hline(i = 1, j = c(1:3, 7:8), part = "header", border = officer::fp_border(width = 0)) %>%
+  add_header_row(top = TRUE, values = c("", "5-year Average", ""), colwidths = c(3, 3, 1)) %>%
+  hline(i = 1, j = c(1:3, 7), part = "header", border = officer::fp_border(width = 0)) %>%
   hline(i = 1, j = 4:6, part = "header", border = officer::fp_border(width = 2)) %>%
   align(i = 1, align = "center", part = "header") %>%
-  colformat_double(j = c("forecast", "md", "mad", "maape_average"), digits = 0) %>%
+  colformat_double(j = c("forecast", "md", "mad"), digits = 0) %>%
   colformat_double(j = c("maape", "maape_weight"), digits = 2) %>%
   merge_v(~ age) %>%
+  merge_h_range(~ type == "Total Forecast", j1 = 3, j2 = 7) %>%
   valign(j = "age", valign = "top") %>%
-  bold(i = which(paste0(forecast$type, forecast$age) %in% paste0(best_mod$type, best_mod$age))) %>%
+  bold(~ type == "MAAPE model average", 1:7) %>%
   footnote(i = 2, j = 4:6, 
            value = as_paragraph(
              c(" mean deviation",
              " mean absolute deviation",
-             " mean absolute arctanget percent error")),
+             " mean absolute arctangent percent error")),
            ref_symbols = c("a", "b", "c"),
-           part = "header") %>% 
-  fontsize(size = 10, part = "footer") %>%
+           part = "header") %>%
+  add_footer_row(c("2025 Total Forecast (80% CI)",
+                   paste0(format(round(LRforecast, 0), big.mark = ","), 
+                          " (", 
+                          format(round(LRforecast_CI[1], 0), big.mark = ","),
+                          "-", 
+                          format(round(LRforecast_CI[2], 0), big.mark = ","),
+                          ")")), 
+                   colwidths = c(2, 5),
+                   top = TRUE) %>%
+  bold(i = 1, part = "footer") %>%
+  hline(i = 1, j = 1:7, part = "footer", border = officer::fp_border(color = "#666666", width = 2)) %>% 
+  fontsize(i = 2:4, j = 1, size = 10, part = "footer") %>%
   autofit()
 ER_table
 save_as_docx(ER_table, path = ".\\ER_table.docx")

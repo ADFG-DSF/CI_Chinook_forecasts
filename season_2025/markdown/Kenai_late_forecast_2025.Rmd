@@ -27,9 +27,11 @@ dat7 <- prep_brood(brood, 5:7)
 ```
 
 ## 2025 Kenai late-run Forecast
+
 ## Age 5 models
+
 ```{r}
-# 5 year moving median
+# moving mean
 # add to age 5 data set
 #naming convention is "forecasttype_pred" where md5 means 5 year running median
 dat5$mn3_pred <- pred_ma(dat5$ln, yrs = 3)[, "mean"]
@@ -136,7 +138,7 @@ summary(rick6) #not significant
 
 # compare models
 # Notice ARIMAsibling is similar to ARIMA. I'm not going to include it to simplify things
-# Also notcie that the sibling model has been very poor the last 2 years. Also remove fomr forecast.
+# Also notice that the sibling model has been very poor the last 2 years. Also remove from forecast.
 (comp6 <- comp_models(dat6, comp_age = 6, metric = c("md", "mad", "maape")))
 ```
 
@@ -221,8 +223,9 @@ summary(rick7) #insignificant
 forecast7_0 <- 
   data.frame(
     es_pred = exp(predict(ets7, h = 1)[["mean"]][1]),
-    univariate_pred = exp(predict(ARIMAar1d1_age7, n.ahead = 1)$pred)[[1]],
-    sibling_pred = exp(predict(sib7, newdata = data.frame(age6_ln = log(max(which(!is.na(brood$age6)))))))
+#    mn3_pred = exp(mean(dat7$age7_ln[(length(dat7$ln) - 2):length(dat7$ln)])),
+    univariate_pred = exp(predict(ARIMAar1d1_age7, n.ahead = 1)$pred)[[1]]#,
+#    sibling_pred = exp(predict(sib7, newdata = data.frame(age6_ln = log(max(which(!is.na(brood$age6)))))))
   ) %>%
   pivot_longer(cols = everything(), names_to = "type", values_to = "forecast") %>%
   left_join(comp7$table, by = "type") %>%
@@ -254,12 +257,6 @@ forecast <-
   rbind(forecast5, forecast6) %>%
   rbind(forecast7)
 forecast
-# This object tells the "errors" object which hindcasts to use to estimate forecast accuracy. It would be better to just read in the actual forecasts for the last 5 years as the basis for estimating the error and the CI.
-best_mod <- 
-  forecast %>%
-  group_by(age) %>%
-  filter(maape == min(maape, na.rm = TRUE)) %>%
-  select(age, type, forecast)
 
 errors <-
   forecast_errors %>%
@@ -288,8 +285,7 @@ LR_table <-
     md = "MD",
     mad = "MAD",
     maape = "MAAPE",
-    maape_weight = "MAAPE \n weight",
-    maape_average = "MAAPE \n Model \n Average"
+    maape_weight = "MAAPE \n weight"
   ) %>%
   add_header_row(top = TRUE, values = c("", "5-year Average", ""), colwidths = c(3, 3, 1)) %>%
   hline(i = 1, j = c(1:3, 7), part = "header", border = officer::fp_border(width = 0)) %>%
@@ -298,6 +294,7 @@ LR_table <-
   colformat_double(j = c("forecast", "md", "mad"), digits = 0) %>%
   colformat_double(j = c("maape", "maape_weight"), digits = 2) %>%
   merge_v(~ age) %>%
+  merge_h_range(~ type == "Total Forecast", j1 = 3, j2 = 7) %>%
   valign(j = "age", valign = "top") %>%
   bold(~ type == "MAAPE model average", 1:7) %>%
   footnote(i = 2, j = 4:6, 
@@ -306,8 +303,19 @@ LR_table <-
              " mean absolute deviation",
              " mean absolute arctangent percent error")),
            ref_symbols = c("a", "b", "c"),
-           part = "header") %>% 
-  fontsize(size = 10, part = "footer") %>%
+           part = "header") %>%
+  add_footer_row(c("2025 Total Forecast (80% CI)",
+                   paste0(format(round(LRforecast, 0), big.mark = ","), 
+                          " (", 
+                          format(round(LRforecast_CI[1], 0), big.mark = ","),
+                          "-", 
+                          format(round(LRforecast_CI[2], 0), big.mark = ","),
+                          ")")), 
+                   colwidths = c(2, 5),
+                   top = TRUE) %>%
+  bold(i = 1, part = "footer") %>%
+  hline(i = 1, j = 1:7, part = "footer", border = officer::fp_border(color = "#666666", width = 2)) %>% 
+  fontsize(i = 2:4, j = 1, size = 10, part = "footer") %>%
   autofit()
 LR_table
 save_as_docx(LR_table, path = ".\\LR_table.docx")
