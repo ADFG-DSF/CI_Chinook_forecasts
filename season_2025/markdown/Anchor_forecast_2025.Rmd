@@ -431,5 +431,5 @@ Anchor_table <-
   fontsize(i = 2:4, j = 1, size = 10, part = "footer") %>%
   autofit()
 Anchor_table
-save_as_docx(Anchor_table, path = ".\\ER_table.docx")
+save_as_docx(Anchor_table, path = ".\\Anchor_table.docx")
 ```
