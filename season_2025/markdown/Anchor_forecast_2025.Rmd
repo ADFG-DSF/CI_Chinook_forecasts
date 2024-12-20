@@ -1,0 +1,435 @@
+---
+title: "Anchor River 2025 forecast"
+author: "Adam Reimer"
+date: "2024-12-19"
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+ 
+#install packages
+devtools::install_github("adamreimer/preseason")
+library(preseason)
+library(tidyverse)
+library(flextable)
+
+#read data
+brood <- read.csv("..//data//brood_Anchor_2024.csv")
+forecast_errors <- read.csv("..//..//forecast_error.csv", 
+                            colClasses = c("integer", "character", "integer", "integer", "integer"))
+```
+
+## 2025 Anchor River Forecast
+## Age 3 models
+```{r, echo=FALSE}
+#prep data
+dat3 <- prep_brood(brood, 3:3)
+
+# moving mean
+# add to age 3 data set
+#naming convention is "forecasttype_pred" where md3 means 3 year running median
+dat3$md3_pred <- pred_ma(dat3$ln, yrs = 3)[, "median"]
+
+# univariate - time series (ARIMA)
+# name the model with an informative name (ARIMAar1d1ma1_ageX) for (1,1,1)
+# name hindcast predictions "univariate_pred"
+forecast::tsdisplay(dat3$ln)
+forecast::auto.arima(dat3$ln) # Changed to (0,0,0) for 2024 forecast
+ARIMA000_age3 <- arima(dat3$ln, order=c(0,0,0))
+summary(ARIMA000_age3)
+#temp bc the output is on the log scale and includes SE's
+temp3U <- pred_arima(ARIMA000_age3, x = dat3$ln)
+# name hindcast predictions "univariate_pred" so the names referes to the model class
+dat3$univariate_pred <- exp(temp3U[1,])
+
+# exponential smoothing
+# Note this model object (ets5) is needed to produce the forecast
+# Note "MNN" specified so I make that specification for the hindcast
+(ets3 <- forecast::ets(dat3$ln))
+dat3$es_pred <- pred_es(dat3$ln, model_0 = "MNN")
+
+#compare models
+#Notice exponential smoothing (alpha = 0) and ARIMA (0,0,0) are both providing a long-term average 
+# of the data. I don't think we should include either as we expect a dynamic environment.
+(comp_3 <- comp_models(dat3, comp_age = 3, metric = c("md", "mad", "maape")))
+```
+
+## Age 3 forecast
+
+```{r, echo=FALSE}
+forecast3_0 <- 
+  data.frame(
+    #es_pred = exp(predict(ets3, h = 1)[["mean"]][1]),
+    md3_pred = exp(mean(dat3$ln[(length(dat3$ln) - 2):length(dat3$ln)]))#,
+    #univariate_pred = exp(predict(ARIMA000_age3, n.ahead = 1)$pred)
+  ) %>%
+  pivot_longer(cols = everything(), names_to = "type", values_to = "forecast") %>%
+  left_join(comp_3$table, by = "type") %>%
+  mutate(
+    age = "3",
+    maape_weight =  (1 / maape) / sum(1 / maape))
+
+forecast3 <- 
+  forecast3_0 %>%
+  rbind(
+    data.frame(
+      age = "3",
+      type = "maape_average",
+      forecast = sum(forecast3_0$maape_weight * forecast3_0$forecast, na.rm = TRUE),
+      md = NA,
+      mad = NA,
+      maape = NA,
+      maape_weight = NA)
+  ) %>%
+  select(age, type, forecast, md, mad, maape, maape_weight)
+
+forecast3
+```
+
+## Age 4 models
+
+```{r, echo=FALSE}
+#prep data
+dat4 <- prep_brood(brood, 3:4)
+
+# Moving geometric mean
+dat4$md3_pred <- pred_ma(dat4$age4_ln, yrs = 3)[, "median"]
+
+# univariate - time series (ARIMA)
+forecast::tsdisplay(dat4$age4_ln)
+# Note: (0,0,0) implies the forecast will just be the mean
+forecast::auto.arima(dat4$age4_ln)
+ARIMA000_age4 <- arima(dat4$age4_ln, order=c(0,0,0))
+summary(ARIMA000_age4)
+temp4U <- pred_arima(ARIMA000_age4, x = dat4$age4_ln)
+dat4$univariate_pred <- exp(temp4U[1,])
+
+# exponential smoothing
+(ets4 <- forecast::ets(dat4$age4_ln))
+dat4$es_pred <- pred_es(dat4$age4_ln)
+
+# sibling model
+ggplot2::ggplot(dat4, ggplot2::aes(x = age3_ln, y = age4_ln)) + ggplot2::geom_point()
+sib4 <- lm(age4_ln ~ age3_ln, data = dat4)
+summary(sib4)  #model is insignificant.
+# check the residuals - OK
+par(mfrow = c(2,2)); plot(sib4); par(mfrow = c(1,1))
+
+# Ricker
+plot(dat4$S, dat4$lnRS)
+rick4 <- lm(lnRS ~ S, data = dat4)
+summary(rick4) #weak significance
+par(mfrow = c(2,2)); plot(rick4); par(mfrow = c(1,1))
+# No serial correlation
+forecast::tsdisplay(residuals(rick4))
+forecast::auto.arima(rick4$model$lnRS, xreg = rick4$model$S)
+dat4$rick_pred <- exp(pred_lm(rick4)[1,]) * rick4$model$S
+
+# compare models
+# Notice exponential smoothing (alpha = 0) and ARIMA (0,0,0) are mostly both providing a long-term 
+# average of the data (the exponential smoothing model sometimes weights recent data but on those 
+# occasions it made for WORSE hindcasts). I don't think we should include either as we expect a
+# dynamic environment.
+(comp4 <- comp_models(dat4, comp_age = 4, metric = c("md", "mad", "maape")))
+```
+
+## Age 4 predictions
+
+```{r, echo=FALSE}
+forecast4_0 <- 
+  data.frame(
+    #es_pred = exp(predict(ets4, h = 1)[["mean"]][1]),
+    md3_pred = exp(mean(dat4$age4_ln[(length(dat4$ln) - 2):length(dat4$ln)])),
+    #univariate_pred = exp(predict(ARIMA000_age4, n.ahead = 1)$pred)[[1]],
+    rick_pred = exp(predict(rick4, newdata = data.frame(S = brood$S[max(which(!is.na(brood$age4))) + 1]))) * brood$S[max(which(!is.na(brood$age4))) + 1]
+  ) %>%
+  pivot_longer(cols = everything(), names_to = "type", values_to = "forecast") %>%
+  left_join(comp4$table, by = "type") %>%
+  mutate(
+    age = "4",
+    maape_weight =  (1 / maape) / sum(1 / maape))
+
+forecast4 <- 
+  forecast4_0 %>%
+  rbind(
+    data.frame(
+      age = "4",
+      type = "maape_average",
+      forecast = sum(forecast4_0$maape_weight * forecast4_0$forecast, na.rm = TRUE),
+      md = NA,
+      mad = NA,
+      maape = NA,
+      maape_weight = NA)
+  ) %>%
+  select(age, type, forecast, md, mad, maape, maape_weight)
+
+forecast4
+```
+
+## Age 5 models
+
+```{r, echo=FALSE}
+#prep data
+dat5 <- prep_brood(brood, 3:5)
+
+# Moving geometric mean
+dat5$md3_pred <- pred_ma(dat5$age5_ln, yrs = 3)[, "median"]
+
+# univariate - time series (ARIMA)
+forecast::tsdisplay(dat5$age5_ln)
+# Note: (0,0,0) implies average
+forecast::auto.arima(dat5$age5_ln)
+ARIMA000_age5 <- arima(dat5$age5_ln, order=c(0,0,0))
+summary(ARIMA000_age5)
+temp5U <- pred_arima(ARIMA000_age5, x = dat5$age5_ln)
+dat5$univariate_pred <- exp(temp5U[1,])
+
+# exponential smoothing
+(ets5 <- forecast::ets(dat5$age5_ln))
+dat5$es_pred <- pred_es(dat5$age5_ln)
+
+# sibling model
+ggplot2::ggplot(dat5, ggplot2::aes(x = age4_ln, y = age5_ln)) + ggplot2::geom_point()
+sib5 <- lm(age5_ln ~ age4_ln, data = dat5)
+summary(sib5)  #make sure the model is significant before going further.
+# check the residuals
+par(mfrow = c(2,2)); plot(sib5); par(mfrow = c(1,1))
+# add hindcasts
+# This is the standard sibling model predictions
+temp5sib<- pred_lm(sib5)
+dat5$sibling_pred <- exp(temp5sib[1,])
+# look for serial correlation in the residuals of the sibling model - none
+forecast::tsdisplay(residuals(sib5))
+forecast::auto.arima(sib5$model$age5_ln, xreg = sib5$model$age4_ln)
+# Notice one influential point in the full model
+dat5[17,]
+sib5_influence <- lm(age5_ln ~ age4_ln, data = dat5[-17, ])
+# The sibling is insignificant if removed.
+summary(sib5_influence)
+par(mfrow = c(2,2)); plot(sib5_influence); par(mfrow = c(1,1))
+# This is the standard sibling model predictions
+temp5sibinf <- pred_lm(sib5_influence)
+#add predictions from model wo influential point
+dat5$sibling_inf_pred <- 
+  c(exp(temp5sibinf[1,]), 
+    exp((coef(sib5_influence)[1] + coef(sib5_influence)[2] * dat5[17, "age4_ln"])))
+# look for serial correlation in the residuals of the sibling model - none
+forecast::tsdisplay(residuals(sib5_influence))
+forecast::auto.arima(sib5_influence$model$age5_ln, xreg = sib5_influence$model$age4_ln)
+
+
+# Ricker
+plot(dat5$S, dat5$lnRS)
+rick5 <- lm(lnRS ~ S, data = dat5)
+summary(rick5) #significant
+# Residuals look good
+par(mfrow = c(2,2)); plot(rick5); par(mfrow = c(1,1))
+dat5$rick_pred <- exp(pred_lm(rick5)[1,]) * rick5$model$S
+# look for serial correlation in the residuals of the sibling model - none
+forecast::tsdisplay(residuals(rick5))
+forecast::auto.arima(rick5$model$lnRS, xreg = rick5$model$s)
+
+# compare models
+#Notice exponential smoothing (alpha = 0) and ARIMA (0,0,0) are both providing a long-term 
+# average of the data. I don't think we should include either as we expect a dynamic environment.
+(comp5 <- comp_models(dat5, comp_age = 5, metric = c("md", "mad", "maape")))
+```
+
+## Age 5 predictions
+
+```{r, echo=FALSE}
+forecast5_0 <- 
+  data.frame(
+    #es_pred = exp(predict(ets5, h = 1)[["mean"]][1]),
+    md3_pred = exp(mean(dat5$age5_ln[(length(dat5$ln) - 2):length(dat5$ln)])),
+    #univariate_pred = exp(predict(ARIMA000_age5, n.ahead = 1)$pred)[[1]],
+    sibling_pred = exp(predict(sib5, newdata = data.frame(age4_ln = log(brood$age4[max(which(!is.na(brood$age4)))])))),
+    rick_pred = exp(predict(rick5, newdata = data.frame(S = brood$S[max(which(!is.na(brood$age5))) + 1]))) * brood$S[max(which(!is.na(brood$age5))) + 1]
+  ) %>%
+  pivot_longer(cols = everything(), names_to = "type", values_to = "forecast") %>%
+  left_join(comp5$table, by = "type") %>%
+  mutate(
+    age = "5",
+    maape_weight =  (1 / maape) / sum(1 / maape))
+
+forecast5 <- 
+  forecast5_0 %>%
+  rbind(
+    data.frame(
+      age = "5",
+      type = "maape_average",
+      forecast = sum(forecast5_0$maape_weight * forecast5_0$forecast, na.rm = TRUE),
+      md = NA,
+      mad = NA,
+      maape = NA,
+      maape_weight = NA)
+  ) %>%
+  select(age, type, forecast, md, mad, maape, maape_weight)
+
+forecast5
+```
+
+## Age 6 models
+
+```{r, echo=FALSE}
+#prep data
+dat6 <- prep_brood(brood, 3:6)
+
+# Moving geometric mean
+dat6$md3_pred <- pred_ma(dat6$age6_ln, yrs = 3)[, "median"]
+
+# univariate - time series (ARIMA)
+forecast::tsdisplay(dat6$age6_ln)
+forecast::auto.arima(dat6$age6_ln) #(0,0,0) for 2024
+ARIMA000_age6 <- arima(dat6$age6_ln, order=c(0,0,0))
+summary(ARIMA000_age6)
+temp6U <- pred_arima(ARIMA000_age6, x = dat6$age6_ln)
+dat6$univariate_pred <- exp(temp6U[1,])
+
+# exponential smoothing
+(ets6 <- forecast::ets(dat6$age6_ln))
+dat6$es_pred <- pred_es(dat6$age6_ln)
+
+# sibling model
+ggplot2::ggplot(dat6, ggplot2::aes(x = age5_ln, y = age6_ln)) + ggplot2::geom_point()
+sib6 <- lm(age6_ln ~ age5_ln, data = dat6)
+summary(sib6)  #model insignificant
+# check the residuals - OK
+par(mfrow = c(2,2)); plot(sib6); par(mfrow = c(1,1))
+
+# Ricker
+plot(dat6$S, dat6$lnRS)
+rick6 <- lm(lnRS ~ S, data = dat6)
+summary(rick6) #significant
+# Residuals look good
+par(mfrow = c(2,2)); plot(rick6); par(mfrow = c(1,1))
+# Notice we have on very influential data point - 2018
+dat6[16,]
+rick6_influence <- lm(lnRS ~ S, data = dat6[-16, ])
+# The Ricker is more significant if removed!
+summary(rick6_influence)
+par(mfrow = c(2,2)); plot(rick6_influence); par(mfrow = c(1,1))
+# add hindcasts
+dat6$rick_pred <- exp(pred_lm(rick6)[1,]) * rick6$model$S
+# look for serial correlation in the residuals of the sibling model - none
+forecast::tsdisplay(residuals(rick6))
+forecast::auto.arima(rick6$model$lnRS, xreg = rick6$model$S)
+
+# compare models
+# Notice exponential smoothing (alpha = 0) and ARIMA (0,0,0) are mostly both providing a long-term 
+# average of the data (the exponential smoothing model sometimes weights recent data but on those 
+# occasions it made for WORSE hindcasts). I don't think we should include either as we expect a 
+# dynamic environment.
+(comp6 <- comp_models(dat6, comp_age = 6))
+
+# Note sibling very different from others but we have seen at least .9:1 between 5 and 4 year olds
+# in the past 10 years. Average = 2
+dat5$age5_ln - dat5$age4_ln
+exp(dat5$age5_ln) / exp(dat5$age4_ln)
+mean(exp(dat5$age5_ln)[8:17] / exp(dat5$age4_ln)[8:17])
+
+```
+
+## Age 6 predictions
+
+```{r, echo=FALSE}
+forecast6_0 <- 
+  data.frame(
+    #es_pred = exp(predict(ets6, h = 1)[["mean"]][1]),
+    md3_pred = exp(mean(dat6$age6_ln[(length(dat6$ln) - 2):length(dat6$ln)])),
+    #univariate_pred = exp(predict(ARIMA000_age6, n.ahead = 1)$pred)[[1]],
+    rick_pred = exp(predict(rick6, newdata = data.frame(S = brood$S[max(which(!is.na(brood$age6))) + 1]))) * brood$S[max(which(!is.na(brood$age6))) + 1]
+  ) %>%
+  pivot_longer(cols = everything(), names_to = "type", values_to = "forecast") %>%
+  left_join(comp6$table, by = "type") %>%
+  mutate(
+    age = "6",
+    maape_weight =  (1 / maape) / sum(1 / maape))
+
+forecast6 <- 
+  forecast6_0 %>%
+  rbind(
+    data.frame(
+      age = "6",
+      type = "maape_average",
+      forecast = sum(forecast6_0$maape_weight * forecast6_0$forecast, na.rm = TRUE),
+      md = NA,
+      mad = NA,
+      maape = NA,
+      maape_weight = NA)
+  ) %>%
+  select(age, type, forecast, md, mad, maape, maape_weight)
+
+forecast6
+```
+
+```{r, echo=FALSE}
+forecast <-
+  rbind(forecast3, forecast4) %>%
+  rbind(forecast5) %>%
+  rbind(forecast6)
+forecast
+
+errors <- # warning... using Kenai errors since we dont have anchor errors
+  forecast_errors %>%
+  filter(run == "late") %>%
+  tail(n = 5) %>%
+  mutate(errors_ln = log(forecast / estimate))
+
+# following Tony's lead... use the model average.
+(LRforecast <- sum(forecast$forecast[forecast$type == "maape_average"]))
+# rmse 80% bounds
+(LRforecast_CI <- exp(sqrt(mean(errors$errors_ln^2)) * c(qt(.1, 5), qt(.9, 5))) * LRforecast)
+```
+
+```{r}
+Anchor_table <- 
+  forecast %>%
+  mutate(type = factor(type,
+                       levels = c("es_pred", "md3_pred", "univariate_pred", "sibling_pred", "rick_pred", "maape_average"),
+                       labels = c("Exponential Smooth", "3-yr rolling mean", "ARIMA", "Sibling", "Ricker", "MAAPE model average"))) %>%
+  flextable() %>%
+  set_header_labels(
+    age = "Age",
+    type = "Model",
+    forecast = "2025 \n Forecast",
+    md = "MD",
+    mad = "MAD",
+    maape = "MAAPE",
+    maape_weight = "MAAPE \n weight"
+  ) %>%
+  add_header_row(top = TRUE, values = c("", "5-year Average", ""), colwidths = c(3, 3, 1)) %>%
+  hline(i = 1, j = c(1:3, 7), part = "header", border = officer::fp_border(width = 0)) %>%
+  hline(i = 1, j = 4:6, part = "header", border = officer::fp_border(width = 2)) %>%
+  align(i = 1, align = "center", part = "header") %>%
+  colformat_double(j = c("forecast", "md", "mad"), digits = 0) %>%
+  colformat_double(j = c("maape", "maape_weight"), digits = 2) %>%
+  merge_v(~ age) %>%
+  merge_h_range(~ type == "Total Forecast", j1 = 3, j2 = 7) %>%
+  valign(j = "age", valign = "top") %>%
+  bold(~ type == "MAAPE model average", 1:7) %>%
+  footnote(i = 2, j = 4:6, 
+           value = as_paragraph(
+             c(" mean deviation",
+             " mean absolute deviation",
+             " mean absolute arctangent percent error")),
+           ref_symbols = c("a", "b", "c"),
+           part = "header") %>%
+  add_footer_row(c("2025 Total Forecast (80% CI)",
+                   paste0(format(round(LRforecast, 0), big.mark = ","), 
+                          " (", 
+                          format(round(LRforecast_CI[1], 0), big.mark = ","),
+                          "-", 
+                          format(round(LRforecast_CI[2], 0), big.mark = ","),
+                          ")")), 
+                   colwidths = c(2, 5),
+                   top = TRUE) %>%
+  bold(i = 1, part = "footer") %>%
+  hline(i = 1, j = 1:7, part = "footer", border = officer::fp_border(color = "#666666", width = 2)) %>% 
+  fontsize(i = 2:4, j = 1, size = 10, part = "footer") %>%
+  autofit()
+Anchor_table
+save_as_docx(Anchor_table, path = ".\\ER_table.docx")
+```
