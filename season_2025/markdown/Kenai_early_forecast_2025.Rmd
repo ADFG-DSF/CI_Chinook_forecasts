@@ -266,7 +266,7 @@ forecast
 
 errors <-
   forecast_errors %>%
-  filter(run == "early") %>%
+  filter(run == "Kenai early") %>%
   tail(n = 5) %>%
   mutate(errors_ln = log(forecast / estimate))
 
@@ -323,5 +323,5 @@ ER_table <-
   fontsize(i = 2:4, j = 1, size = 10, part = "footer") %>%
   autofit()
 ER_table
-save_as_docx(ER_table, path = ".\\ER_table.docx")
+save_as_docx(ER_table, path = ".\\KenaiER_table.docx")
 ```

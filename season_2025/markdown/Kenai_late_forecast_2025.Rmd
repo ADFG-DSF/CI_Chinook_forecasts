@@ -251,8 +251,7 @@ forecast7
 ```
 
 ```{r}
-################################# Calculate prediction intervals ##################################################
-############################## Careful!!!!! modify this before you run it so you don't overwrite dat objects #######
+#Calculate prediction intervals
 forecast <-
   rbind(forecast5, forecast6) %>%
   rbind(forecast7)
@@ -260,7 +259,7 @@ forecast
 
 errors <-
   forecast_errors %>%
-  filter(run == "late") %>%
+  filter(run == "Kenai late") %>%
   tail(n = 5) %>%
   mutate(errors_ln = log(forecast / estimate))
 
@@ -318,5 +317,5 @@ LR_table <-
   fontsize(i = 2:4, j = 1, size = 10, part = "footer") %>%
   autofit()
 LR_table
-save_as_docx(LR_table, path = ".\\LR_table.docx")
+save_as_docx(LR_table, path = ".\\KenaiLR_table.docx")
 ```
